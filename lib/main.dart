@@ -8,6 +8,8 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:flame/game.dart';
+import 'game.dart';
 
 // --------------------------------------------------------
 // HTML/JS/CSS Payload for the phone client
@@ -347,6 +349,7 @@ class _ServerScreenState extends State<ServerScreen> {
   HttpServer? _server;
 
   GameState _gameState = GameState.waiting;
+  ShadowFightGame? _game;
   
   // Track connections using WebSocketChannel as key to uniquely identify sessions
   final Map<WebSocketChannel, int> _connectedPlayers = {};
@@ -437,6 +440,7 @@ class _ServerScreenState extends State<ServerScreen> {
               // Check if both players are ready
               if (_playerSkills.containsKey(1) && _playerSkills.containsKey(2)) {
                 _gameState = GameState.starting;
+                _game = ShadowFightGame();
                 
                 // Broadcast game_start to both players
                 final startMsg = jsonEncode({'type': 'game_start'});
@@ -450,6 +454,10 @@ class _ServerScreenState extends State<ServerScreen> {
             final action = data['action'];
             final state = data['state'];
             debugPrint('Player $playerId: $action $state');
+            
+            if (_gameState == GameState.starting && _game != null) {
+              _game!.handleInput(playerId!, action, state);
+            }
           }
         } catch (e) {
           debugPrint('Error parsing message from Player $playerId: $e');
@@ -460,6 +468,7 @@ class _ServerScreenState extends State<ServerScreen> {
           _connectedPlayers.remove(webSocket);
           _playerSkills.remove(playerId);
           _gameState = GameState.waiting; // Revert state if a player disconnects
+          _game = null;
         });
       }, onError: (error) {
         debugPrint('Player $playerId error: $error');
@@ -582,72 +591,8 @@ class _ServerScreenState extends State<ServerScreen> {
 
   Widget _buildGameStartingUi() {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Game Starting...',
-              style: TextStyle(
-                fontSize: 64,
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2.0,
-              ),
-            ),
-            const SizedBox(height: 50),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _playerSkillCard(1, _playerSkills[1] ?? []),
-                _playerSkillCard(2, _playerSkills[2] ?? []),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _playerSkillCard(int playerId, List<String> skills) {
-    return Container(
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: playerId == 1 ? Colors.greenAccent : Colors.lightBlue,
-          width: 3,
-        ),
-      ),
-      child: Column(
-        children: [
-          Text(
-            'Player $playerId',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: playerId == 1 ? Colors.greenAccent : Colors.lightBlue,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Selected Skills',
-            style: TextStyle(fontSize: 20, color: Colors.white70),
-          ),
-          const SizedBox(height: 15),
-          ...skills.map((s) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  s.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 28,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              )),
-        ],
+      body: GameWidget(
+        game: _game!,
       ),
     );
   }

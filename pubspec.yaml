@@ -37,6 +37,7 @@ dependencies:
   shelf: ^1.4.2
   shelf_web_socket: ^3.0.0
   web_socket_channel: ^3.0.3
+  flame: ^1.30.1
 
 dev_dependencies:
   flutter_test:
