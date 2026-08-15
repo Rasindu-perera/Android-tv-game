@@ -19,20 +19,29 @@ const String clientHtml = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=landscape">
     <title>TV Game Controller</title>
     <style>
+        * { box-sizing: border-box; touch-action: none; }
         body {
             background-color: #121212;
             color: #ffffff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Lobby Styles */
+        #lobbyContainer {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
-            user-select: none;
+            height: 100%;
+            width: 100%;
         }
-        h1 { margin-top: 10px; font-size: 28px; color: #00e676; margin-bottom: 5px; }
+        h1 { margin-top: 10px; font-size: 28px; margin-bottom: 5px; }
         .skills-container {
             display: flex;
             gap: 20px;
@@ -43,7 +52,7 @@ const String clientHtml = '''
             color: white;
             border: 2px solid #555;
             border-radius: 12px;
-            padding: 20px 40px;
+            padding: 15px 30px;
             font-size: 20px;
             cursor: pointer;
             transition: all 0.2s;
@@ -66,35 +75,110 @@ const String clientHtml = '''
             padding: 15px 50px;
             font-size: 22px;
             font-weight: bold;
-            cursor: pointer;
             visibility: hidden;
-            transition: background-color 0.2s;
-        }
-        .ready-btn:active {
-            background-color: #dd2c00;
         }
         .ready-btn.visible { visibility: visible; }
         #status { margin-top: 5px; color: #aaa; font-size: 16px; }
+
+        /* Controller Styles */
+        #controllerContainer {
+            display: none; /* Flex when active */
+            width: 100%;
+            height: 100%;
+            padding: 20px 40px;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .d-pad {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .d-row {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            align-items: center;
+        }
+        .d-spacer { width: 70px; height: 70px; }
+        
+        .action-pad {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        .a-row { display: flex; gap: 20px; }
+        
+        .ctrl-btn { 
+            width: 70px; height: 70px; border-radius: 50%; 
+            background-color: #444; color: white; border: 2px solid #666;
+            font-size: 14px; font-weight: bold; user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            display: flex; justify-content: center; align-items: center;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+        .action-btn { background-color: #ff3d00; border-color: #ff3d00; width: 85px; height: 85px; font-size: 16px;}
+        .skill-action-btn { background-color: #29b6f6; border-color: #29b6f6; width: 80px; height: 80px; border-radius: 16px; font-size: 14px;}
+        
+        /* State classes applied via JS */
+        .btn-pressed { transform: scale(0.85); background-color: #222 !important; }
+        .skill-cooldown { opacity: 0.3; }
     </style>
 </head>
 <body>
-    <h1 id="title">Connecting...</h1>
-    <div id="status">Connecting to TV...</div>
-    <div class="skills-container" id="skillsContainer" style="display:none;">
-        <button class="skill-btn" onclick="toggleSkill('fireball', this)">Fireball</button>
-        <button class="skill-btn" onclick="toggleSkill('dash', this)">Dash</button>
-        <button class="skill-btn" onclick="toggleSkill('heal', this)">Heal</button>
+    
+    <!-- LOBBY UI -->
+    <div id="lobbyContainer">
+        <h1 id="title">Connecting...</h1>
+        <div id="status">Connecting to TV...</div>
+        <div class="skills-container" id="skillsContainer" style="display:none;">
+            <button class="skill-btn" onclick="toggleSkill('fireball', this)">Fireball</button>
+            <button class="skill-btn" onclick="toggleSkill('dash', this)">Dash</button>
+            <button class="skill-btn" onclick="toggleSkill('heal', this)">Heal</button>
+        </div>
+        <button class="ready-btn" id="readyBtn" onclick="sendReady()">READY</button>
     </div>
-    <button class="ready-btn" id="readyBtn" onclick="sendReady()">READY</button>
+
+    <!-- CONTROLLER UI -->
+    <div id="controllerContainer">
+        <!-- D-Pad -->
+        <div class="d-pad">
+            <div class="d-row">
+                <div class="ctrl-btn" data-action="up">UP</div>
+            </div>
+            <div class="d-row">
+                <div class="ctrl-btn" data-action="left">LEFT</div>
+                <div class="d-spacer"></div>
+                <div class="ctrl-btn" data-action="right">RIGHT</div>
+            </div>
+            <div class="d-row">
+                <div class="ctrl-btn" data-action="down">DOWN</div>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="action-pad">
+            <div class="a-row">
+                <div class="ctrl-btn action-btn" data-action="punch">PUNCH</div>
+                <div class="ctrl-btn action-btn" data-action="kick">KICK</div>
+            </div>
+            <div class="a-row">
+                <div class="ctrl-btn skill-action-btn" id="skillBtn1" data-action="skill1">SKILL1</div>
+                <div class="ctrl-btn skill-action-btn" id="skillBtn2" data-action="skill2">SKILL2</div>
+            </div>
+        </div>
+    </div>
 
     <script>
-        // Connect to WebSocket server on the same host but at /ws path
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = wsProtocol + '//' + location.host + '/ws';
         const ws = new WebSocket(wsUrl);
         
         let playerNum = 0;
         let selectedSkills = [];
+        let isGameStarted = false;
         
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -108,16 +192,35 @@ const String clientHtml = '''
                 document.getElementById('title').innerText = 'Error';
                 document.getElementById('title').style.color = '#ff3d00';
                 document.getElementById('status').innerText = data.message;
+            } else if (data.type === 'game_start') {
+                isGameStarted = true;
+                
+                // Switch UI from Lobby to Controller
+                document.getElementById('lobbyContainer').style.display = 'none';
+                document.getElementById('controllerContainer').style.display = 'flex';
+                
+                // Configure skill buttons dynamically based on selections
+                if (selectedSkills.length >= 2) {
+                    const sb1 = document.getElementById('skillBtn1');
+                    const sb2 = document.getElementById('skillBtn2');
+                    sb1.innerText = selectedSkills[0].toUpperCase();
+                    sb1.dataset.action = selectedSkills[0]; // E.g., 'fireball'
+                    sb2.innerText = selectedSkills[1].toUpperCase();
+                    sb2.dataset.action = selectedSkills[1]; // E.g., 'dash'
+                }
             }
         };
 
         ws.onclose = () => {
-            document.getElementById('title').innerText = 'Disconnected';
-            document.getElementById('status').innerText = 'Lost connection to TV.';
-            document.getElementById('skillsContainer').style.display = 'none';
-            document.getElementById('readyBtn').style.display = 'none';
+            if (!isGameStarted) {
+                document.getElementById('title').innerText = 'Disconnected';
+                document.getElementById('status').innerText = 'Lost connection to TV.';
+                document.getElementById('skillsContainer').style.display = 'none';
+                document.getElementById('readyBtn').style.display = 'none';
+            }
         };
 
+        // Lobby Logic
         function toggleSkill(skill, btn) {
             const index = selectedSkills.indexOf(skill);
             if (index > -1) {
@@ -150,6 +253,51 @@ const String clientHtml = '''
                 document.getElementById('status').style.color = '#00e676';
             }
         }
+
+        // Controller Input Logic
+        function handleTouch(e, state) {
+            e.preventDefault(); // Prevents 300ms delay, scrolling, and zooming
+            const target = e.currentTarget;
+            const action = target.dataset.action;
+            
+            // Skill Cooldown Logic
+            const isSkill = target.classList.contains('skill-action-btn');
+            if (isSkill && state === 'pressed') {
+                if (target.classList.contains('skill-cooldown')) return; // Ignore if on cooldown
+                
+                target.classList.add('skill-cooldown');
+                setTimeout(() => {
+                    target.classList.remove('skill-cooldown');
+                }, 2000);
+            } else if (isSkill && state === 'released') {
+                // If it's on cooldown but released, still send release to prevent stuck states in engine,
+                // however if it's pressed during cooldown we actually prevented the press message.
+                // We will just let the release fire anyway for safety.
+            }
+
+            // Visual State Update
+            if (state === 'pressed') {
+                target.classList.add('btn-pressed');
+            } else {
+                target.classList.remove('btn-pressed');
+            }
+
+            // Send WebSocket Message
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'input',
+                    action: action,
+                    state: state
+                }));
+            }
+        }
+
+        // Bind touch events to all controller buttons
+        document.querySelectorAll('.ctrl-btn').forEach(btn => {
+            btn.addEventListener('touchstart', (e) => handleTouch(e, 'pressed'), {passive: false});
+            btn.addEventListener('touchend', (e) => handleTouch(e, 'released'), {passive: false});
+            btn.addEventListener('touchcancel', (e) => handleTouch(e, 'released'), {passive: false});
+        });
     </script>
 </body>
 </html>
@@ -252,7 +400,6 @@ class _ServerScreenState extends State<ServerScreen> {
   }
 
   Future<void> _startHttpServer(String ip) async {
-    // 1. WebSocket Handler
     var wsHandler = webSocketHandler((WebSocketChannel webSocket) {
       int? playerId;
 
@@ -281,6 +428,7 @@ class _ServerScreenState extends State<ServerScreen> {
       webSocket.stream.listen((message) {
         try {
           final data = jsonDecode(message);
+          
           if (data['type'] == 'ready') {
             setState(() {
               _playerSkills[playerId!] = List<String>.from(data['skills']);
@@ -289,8 +437,19 @@ class _ServerScreenState extends State<ServerScreen> {
               // Check if both players are ready
               if (_playerSkills.containsKey(1) && _playerSkills.containsKey(2)) {
                 _gameState = GameState.starting;
+                
+                // Broadcast game_start to both players
+                final startMsg = jsonEncode({'type': 'game_start'});
+                for (var wsClient in _connectedPlayers.keys) {
+                  wsClient.sink.add(startMsg);
+                }
               }
             });
+          } else if (data['type'] == 'input') {
+            // Log incoming inputs from the Web Controller
+            final action = data['action'];
+            final state = data['state'];
+            debugPrint('Player $playerId: $action $state');
           }
         } catch (e) {
           debugPrint('Error parsing message from Player $playerId: $e');
@@ -307,19 +466,15 @@ class _ServerScreenState extends State<ServerScreen> {
       });
     });
 
-    // 2. HTTP Router
     FutureOr<shelf.Response> router(shelf.Request request) {
       if (request.url.path.isEmpty || request.url.path == '/') {
-        // Serve the HTML string
         return shelf.Response.ok(clientHtml, headers: {'content-type': 'text/html'});
       } else if (request.url.path == 'ws') {
-        // Upgrade to WebSocket
         return wsHandler(request);
       }
       return shelf.Response.notFound('Not found');
     }
 
-    // 3. Start the server
     _server = await shelf_io.serve(router, ip, 8080);
     debugPrint('Server running on http://$ip:8080');
   }
