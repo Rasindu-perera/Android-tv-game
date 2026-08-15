@@ -403,7 +403,7 @@ class _ServerScreenState extends State<ServerScreen> {
   }
 
   Future<void> _startHttpServer(String ip) async {
-    var wsHandler = webSocketHandler((WebSocketChannel webSocket) {
+    var wsHandler = webSocketHandler((WebSocketChannel webSocket, String? protocol) {
       int? playerId;
 
       // Assign player 1 or 2
