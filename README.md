@@ -1,14 +1,19 @@
 # Shadow Blade ⚔️
 
-A local multiplayer Android TV fighting game built with Flutter and Flame.
+A highly optimized local multiplayer 2D fighting game designed specifically for Android TVs (and mobile devices). Built using **Flutter** and the **Flame Engine**. 
 
-Players connect their mobile devices to the TV over the local WiFi network using a Web-based Virtual Gamepad (HTML/JS/CSS served directly from the Dart server). 
+Instead of traditional remotes, this game turns players' smartphones into virtual console controllers using WebSockets, offering a seamless and lag-free combat experience!
 
-## Features
-- **Android TV Support**: Native Leanback launcher support and adaptive icons.
-- **Web Gamepad Controller**: No app installation needed for players! Just scan/type the IP displayed on the TV to connect.
-- **Zero Latency**: Direct WebSocket communication over LAN.
-- **Virtual Joystick**: Modern glassmorphism analog stick for fluid mobile control.
+### ✨ Key Features
+* 📺 **TV Optimized:** Runs smoothly even on 1GB RAM Android TVs.
+* 📱 **Smart Mobile Controllers:** Scan the IP on your TV and use your phone browser as a glassmorphism virtual joystick/gamepad.
+* 🥷 **Action-Packed Combat:** Sword attacks, custom shuriken throws, dynamic blocking, and dash moves.
+* 🎨 **Dynamic UI:** Responsive custom health bars with dynamic coloring and player names.
+* 🎵 **Immersive Audio:** Complete background music and combat sound effects (flame_audio).
+
+### 🛠️ Tech Stack
+* **Game Engine:** Flutter & Flame
+* **Network/Controllers:** WebSockets (Dart `dart:io`) & HTML/CSS/JS (Virtual Joystick) 
 
 ## Getting Started
 
