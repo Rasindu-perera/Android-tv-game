@@ -2,24 +2,47 @@ import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flame_audio/flame_audio.dart';
 
 // -- Cached Paints for Zero-Allocation Rendering --
 final Paint _groundPaint = Paint()..color = const Color(0xFF2C2C2C);
-final Paint _p1HealthBgPaint = Paint()..color = Colors.red.withOpacity(0.3);
-final Paint _p1HealthPaint = Paint()..color = Colors.redAccent;
-final Paint _p2HealthBgPaint = Paint()..color = Colors.blue.withOpacity(0.3);
-final Paint _p2HealthPaint = Paint()..color = Colors.blueAccent;
-final Paint _fireballPaint = Paint()..color = Colors.orangeAccent;
-final Paint _hitboxPaint = Paint()..color = Colors.white.withOpacity(0.7);
+final Paint _healthBgPaint = Paint()..color = const Color(0xFF222222);
+final Paint _healthFillPaint = Paint()..color = Colors.greenAccent;
+final Paint _healthBorderPaint = Paint()
+  ..color = Colors.white70
+  ..style = PaintingStyle.stroke
+  ..strokeWidth = 3.0;
 
-enum FighterState { idle, run, jump, attack, kick, hurt, crouch }
+final TextPaint _playerLabelPaint = TextPaint(
+  style: const TextStyle(
+    color: Colors.white,
+    fontSize: 24,
+    fontWeight: FontWeight.bold,
+    shadows: [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))],
+  ),
+);
+
+enum FighterState { idle, run, jump, attack, kick, hurt, crouch, block }
 
 class ShadowFightGame extends FlameGame {
   late final Fighter player1;
   late final Fighter player2;
   
   bool isGameOver = false;
-  double gameOverTimer = 0;
+  final void Function(int) onGameOver;
+  String player1Name;
+  String player2Name;
+
+  ShadowFightGame({
+    required this.onGameOver,
+    this.player1Name = "PLAYER 1",
+    this.player2Name = "PLAYER 2",
+  });
+
+  void updatePlayerNames(String p1, String p2) {
+    player1Name = p1;
+    player2Name = p2;
+  }
 
   late final TextPainter p1WinText;
   late final TextPainter p2WinText;
@@ -31,6 +54,20 @@ class ShadowFightGame extends FlameGame {
   @override
   Future<void> onLoad() async {
     super.onLoad();
+
+    // Preload Audio
+    await FlameAudio.audioCache.loadAll([
+      'bgm.mp3',
+      'sword.mp3',
+      'throw.mp3',
+      'hurt.mp3',
+      'jump.mp3',
+      'block.mp3',
+      'dash.mp3',
+    ]);
+    
+    // Start BGM
+    FlameAudio.bgm.play('bgm.mp3');
 
     // Random Background
     final bgName = Random().nextBool() ? 'bg1.png' : 'bg2.png';
@@ -96,8 +133,6 @@ class ShadowFightGame extends FlameGame {
   @override
   void update(double dt) {
     if (isGameOver) {
-      gameOverTimer -= dt;
-      if (gameOverTimer <= 0) resetGame();
       return; 
     }
 
@@ -128,7 +163,8 @@ class ShadowFightGame extends FlameGame {
 
     if (player1.health <= 0 || player2.health <= 0) {
       isGameOver = true;
-      gameOverTimer = 3.0;
+      final winner = player1.health > player2.health ? 1 : 2;
+      onGameOver(winner);
     }
   }
 
@@ -144,15 +180,9 @@ class ShadowFightGame extends FlameGame {
 
   void resetGame() {
     isGameOver = false;
-    player1.health = 100;
-    player2.health = 100;
-    player1.current = FighterState.idle;
-    player2.current = FighterState.idle;
     
-    player1.position.setValues(size.x * 0.2, size.y - 40);
-    player2.position.setValues(size.x * 0.8, size.y - 40);
-    player1.velocity.setZero();
-    player2.velocity.setZero();
+    player1.reset(Vector2(size.x * 0.2, size.y - 40));
+    player2.reset(Vector2(size.x * 0.8, size.y - 40));
     
     children.whereType<Fireball>().forEach((f) => f.removeFromParent());
   }
@@ -161,14 +191,37 @@ class ShadowFightGame extends FlameGame {
   void render(Canvas canvas) {
     super.render(canvas);
 
-    final p1Width = (player1.health / 100).clamp(0.0, 1.0) * 300;
-    final p2Width = (player2.health / 100).clamp(0.0, 1.0) * 300;
+    final p1Percentage = (player1.health / 100).clamp(0.0, 1.0);
+    final p2Percentage = (player2.health / 100).clamp(0.0, 1.0);
+    
+    final p1Width = p1Percentage * 300;
+    final p2Width = p2Percentage * 300;
 
-    canvas.drawRect(Rect.fromLTWH(50, 30, 300, 20), _p1HealthBgPaint);
-    canvas.drawRect(Rect.fromLTWH(50, 30, p1Width, 20), _p1HealthPaint);
+    Color getHealthColor(double percentage) {
+      if (percentage > 0.6) return Colors.greenAccent;
+      if (percentage > 0.3) return Colors.orangeAccent;
+      return Colors.redAccent;
+    }
 
-    canvas.drawRect(Rect.fromLTWH(size.x - 350, 30, 300, 20), _p2HealthBgPaint);
-    canvas.drawRect(Rect.fromLTWH(size.x - 50 - p2Width, 30, p2Width, 20), _p2HealthPaint);
+    // Player 1
+    _playerLabelPaint.render(canvas, player1Name, Vector2(50, 15));
+    final p1BgRect = RRect.fromLTRBR(50, 45, 350, 65, const Radius.circular(5.0));
+    final p1FillRect = RRect.fromLTRBR(50, 45, 50 + p1Width, 65, const Radius.circular(5.0));
+    
+    canvas.drawRRect(p1BgRect, _healthBgPaint);
+    _healthFillPaint.color = getHealthColor(p1Percentage);
+    if (p1Width > 0) canvas.drawRRect(p1FillRect, _healthFillPaint);
+    canvas.drawRRect(p1BgRect, _healthBorderPaint);
+
+    // Player 2
+    _playerLabelPaint.render(canvas, player2Name, Vector2(size.x - 50, 15), anchor: Anchor.topRight);
+    final p2BgRect = RRect.fromLTRBR(size.x - 350, 45, size.x - 50, 65, const Radius.circular(5.0));
+    final p2FillRect = RRect.fromLTRBR(size.x - 50 - p2Width, 45, size.x - 50, 65, const Radius.circular(5.0));
+    
+    canvas.drawRRect(p2BgRect, _healthBgPaint);
+    _healthFillPaint.color = getHealthColor(p2Percentage);
+    if (p2Width > 0) canvas.drawRRect(p2FillRect, _healthFillPaint);
+    canvas.drawRRect(p2BgRect, _healthBorderPaint);
 
     if (isGameOver) {
       TextPainter activeText;
@@ -208,7 +261,7 @@ class GroundComponent extends PositionComponent with HasGameRef<ShadowFightGame>
   }
 }
 
-class Fireball extends PositionComponent with HasGameRef<ShadowFightGame> {
+class Fireball extends SpriteComponent with HasGameRef<ShadowFightGame> {
   final int ownerId;
   final bool movingRight;
   final double speed = 800.0;
@@ -218,7 +271,16 @@ class Fireball extends PositionComponent with HasGameRef<ShadowFightGame> {
     required this.ownerId,
     required this.movingRight,
     required Vector2 startPosition,
-  }) : super(position: startPosition, size: Vector2(30, 20));
+  }) : super(position: startPosition, size: Vector2(80, 40));
+
+  @override
+  Future<void> onLoad() async {
+    super.onLoad();
+    sprite = await gameRef.loadSprite('fireball.png');
+    if (!movingRight) {
+      flipHorizontallyAroundCenter();
+    }
+  }
 
   @override
   void update(double dt) {
@@ -239,12 +301,6 @@ class Fireball extends PositionComponent with HasGameRef<ShadowFightGame> {
       removeFromParent();
     }
   }
-
-  @override
-  void render(Canvas canvas) {
-    super.render(canvas);
-    canvas.drawRect(size.toRect(), _fireballPaint);
-  }
 }
 
 class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRef<ShadowFightGame> {
@@ -253,7 +309,7 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
   
   double health = 100;
   
-  static const double moveSpeed = 400.0;
+  static const double moveSpeed = 550.0;
   static const double jumpForce = -700.0;
   static const double gravity = 1500.0;
 
@@ -281,13 +337,15 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
     required this.facingRight,
   }) : super(
          position: startPosition, 
-         size: Vector2(100, 150),
          anchor: Anchor.bottomCenter, // Sets logical position to be the feet
        );
 
   @override
   Future<void> onLoad() async {
     super.onLoad();
+
+    final dynamicHeight = gameRef.size.y * 0.45;
+    size = Vector2(dynamicHeight * (150 / 225), dynamicHeight);
 
     // Tint for multiplayer distinguishing
     paint = Paint()..colorFilter = ColorFilter.mode(eyeColor.withOpacity(0.5), BlendMode.srcATop);
@@ -308,6 +366,7 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
     final attackFrames = List.generate(4, (i) => 'ninja/_${i + 23}.png');
     final kickFrames = List.generate(2, (i) => 'ninja/_${i + 27}.png');
     final hurtFrames = List.generate(5, (i) => 'ninja/_${i + 29}.png');
+    final blockFrames = List.generate(5, (i) => 'ninja/_${i + 14}.png');
 
     final idleAnim = await loadAnimation(idleFrames);
     final runAnim = await loadAnimation(runFrames);
@@ -315,6 +374,7 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
     final attackAnim = await loadAnimation(attackFrames, loop: false);
     final kickAnim = await loadAnimation(kickFrames, loop: false);
     final hurtAnim = await loadAnimation(hurtFrames, loop: false);
+    final blockAnim = await loadAnimation(blockFrames, loop: true);
 
     animations = {
       FighterState.idle: idleAnim,
@@ -324,9 +384,25 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
       FighterState.kick: kickAnim,
       FighterState.hurt: hurtAnim,
       FighterState.crouch: idleAnim, // fallback
+      FighterState.block: blockAnim,
     };
 
     current = FighterState.idle;
+  }
+
+  void reset(Vector2 initialPosition) {
+    current = FighterState.idle;
+    health = 100;
+    position.setFrom(initialPosition);
+    velocity.setZero();
+    leftPressed = false;
+    rightPressed = false;
+    crouchPressed = false;
+    isAttacking = false;
+    attackHasHit = false;
+    isDashing = false;
+    dashTimer = 0;
+    scale.y = 1.0;
   }
 
   Rect get absoluteRect {
@@ -342,32 +418,43 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
   void handleInput(String action, String state) {
     if (current == FighterState.hurt) return;
     final bool isPressed = state == 'pressed';
+    final bool isBlocking = current == FighterState.block;
     
     switch (action) {
+      case 'block': 
+        if (isPressed) {
+          if (current != FighterState.block) FlameAudio.play('block.mp3');
+          current = FighterState.block;
+        } else if (current == FighterState.block) {
+          current = FighterState.idle;
+        }
+        break;
       case 'left': leftPressed = isPressed; break;
       case 'right': rightPressed = isPressed; break;
       case 'down': crouchPressed = isPressed; break;
       case 'up':
-        if (isPressed && isGrounded && !isAttacking) {
+        if (isPressed && isGrounded && !isAttacking && !isBlocking) {
+          FlameAudio.play('jump.mp3');
           velocity.y = jumpForce;
           isGrounded = false;
           current = FighterState.jump;
         }
         break;
       case 'punch':
-        if (isPressed && !isAttacking && isGrounded) _startAttack(10, 40, 20, FighterState.attack);
+        if (isPressed && !isAttacking && isGrounded && !isBlocking) _startAttack(10, 40, 20, FighterState.attack);
         break;
       case 'kick':
-        if (isPressed && !isAttacking && isGrounded) _startAttack(15, 50, 20, FighterState.kick);
+        if (isPressed && !isAttacking && isGrounded && !isBlocking) _startAttack(15, 50, 20, FighterState.kick);
         break;
       case 'fireball':
-        if (isPressed && !isAttacking && isGrounded) {
+        if (isPressed && !isAttacking && isGrounded && !isBlocking) {
           _startAttack(0, 0, 0, FighterState.attack); 
           gameRef.spawnFireball(this);
         }
         break;
       case 'dash':
-        if (isPressed && !isDashing && isGrounded && !isAttacking) {
+        if (isPressed && !isDashing && isGrounded && !isAttacking && !isBlocking) {
+          FlameAudio.play('dash.mp3');
           isDashing = true;
           dashTimer = 0.2;
           velocity.x = facingRight ? 1500 : -1500;
@@ -375,7 +462,7 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
         }
         break;
       case 'heal':
-        if (isPressed && isGrounded && !isAttacking) {
+        if (isPressed && isGrounded && !isAttacking && !isBlocking) {
           health = (health + 30).clamp(0, 100);
         }
         break;
@@ -389,6 +476,12 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
     current = state;
     animationTicker?.reset();
     
+    if (state == FighterState.attack) {
+      FlameAudio.play('sword.mp3');
+    } else if (state == FighterState.kick) {
+      FlameAudio.play('throw.mp3');
+    }
+    
     if (w > 0 && h > 0) {
       final rectX = facingRight ? size.x : -w;
       final rectY = size.y / 2; 
@@ -399,17 +492,26 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
   }
 
   void takeDamage(double amount) {
+    final bool isBlocking = current == FighterState.block;
+    if (isBlocking) {
+      amount *= 0.2; // 80% damage reduction
+    }
+    
     health -= amount;
-    current = FighterState.hurt;
-    animationTicker?.reset();
     
-    // Knockback
-    velocity.y = -300;
-    isGrounded = false;
-    velocity.x = facingRight ? -300 : 300;
-    
-    isAttacking = false;
-    attackRect = null;
+    if (!isBlocking) {
+      FlameAudio.play('hurt.mp3');
+      current = FighterState.hurt;
+      animationTicker?.reset();
+      
+      // Knockback
+      velocity.y = -300;
+      isGrounded = false;
+      velocity.x = facingRight ? -300 : 300;
+      
+      isAttacking = false;
+      attackRect = null;
+    }
   }
 
   @override
@@ -431,7 +533,9 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
       dashTimer -= dt;
       if (dashTimer <= 0) isDashing = false;
     } else if (current != FighterState.hurt && !isAttacking) {
-      if (leftPressed && !rightPressed) {
+      if (current == FighterState.block) {
+        velocity.x = 0;
+      } else if (leftPressed && !rightPressed) {
         velocity.x = -moveSpeed;
         if (isGrounded && !crouchPressed) current = FighterState.run;
       } else if (rightPressed && !leftPressed) {
@@ -450,7 +554,7 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
     }
 
     // Return to idle / crouch
-    if (velocity.x == 0 && velocity.y == 0 && isGrounded && !isAttacking && current != FighterState.hurt) {
+    if (velocity.x == 0 && velocity.y == 0 && isGrounded && !isAttacking && current != FighterState.hurt && current != FighterState.block) {
       if (crouchPressed) {
         current = FighterState.crouch;
       } else {
@@ -488,10 +592,5 @@ class Fighter extends SpriteAnimationGroupComponent<FighterState> with HasGameRe
   @override
   void render(Canvas canvas) {
     super.render(canvas);
-    
-    // Optional: Draw hitbox for debugging
-    if (isAttacking && attackRect != null) {
-      canvas.drawRect(attackRect!, _hitboxPaint);
-    }
   }
 }
